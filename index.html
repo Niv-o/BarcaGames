@@ -788,11 +788,27 @@
 
   /* ── API HELPER ── */
   async function api(path, key) {
-    const r = await fetch(`${API}${path}`, { headers: { 'X-Auth-Token': key } });
+    let r;
+    try {
+      const targetUrl = `${API}${path}`;
+      const proxyUrl  = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
+      r = await fetch(proxyUrl, { headers: { 'X-Auth-Token': key } });
+    } catch (networkErr) {
+      throw new Error(
+        'Network error — could not reach football-data.org. ' +
+        'Possible causes: (1) Key not yet activated — check your email for a confirmation link from football-data.org. ' +
+        '(2) CORS blocked — try opening the page locally instead of GitHub Pages while testing. ' +
+        `(3) No internet. Raw: ${networkErr.message}`
+      );
+    }
     if (!r.ok) {
-      const msg = r.status === 403 ? 'Invalid API key or tier restriction.' :
-                  r.status === 429 ? 'Rate limit hit — please wait a moment.' :
-                  `API error ${r.status}`;
+      let body = '';
+      try { const j = await r.json(); body = j.message || ''; } catch (_) {}
+      const msg = r.status === 400 ? `Bad request${body ? ': ' + body : ''}` :
+                  r.status === 401 ? 'Unauthorized — key is incorrect or not yet activated.' :
+                  r.status === 403 ? `Forbidden — your free tier may not cover this endpoint.${body ? ' ' + body : ''}` :
+                  r.status === 429 ? 'Rate limit hit — please wait a moment then refresh.' :
+                  `API error ${r.status}${body ? ': ' + body : ''}`;
       throw new Error(msg);
     }
     return r.json();
